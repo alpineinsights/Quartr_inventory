@@ -86,7 +86,7 @@ class QuartrAPI:
         except Exception as e:
             st.error(f"Error fetching data for ISIN {isin}: {str(e)}")
             return {}
-            class TranscriptProcessor:
+class TranscriptProcessor:
     @staticmethod
     async def process_transcript(transcript_url: str, session: aiohttp.ClientSession) -> str:
         """Process transcript JSON into clean text"""
@@ -241,7 +241,7 @@ def format_s3_key(company_name: str, date: str, doc_type: str, filename: str) ->
     clean_date = date.split("T")[0]
     clean_filename = filename.replace(" ", "_").lower()
     return f"{clean_company}/{clean_date}/{doc_type}/{clean_filename}"
-    async def process_documents(isin_list: List[str], start_date: str, end_date: str, 
+async def process_documents(isin_list: List[str], start_date: str, end_date: str, 
                           selected_docs: List[str], bucket_name: str):
     quartr = QuartrAPI()
     s3_handler = S3Handler()
