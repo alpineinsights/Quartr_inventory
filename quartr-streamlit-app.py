@@ -354,7 +354,7 @@ async def process_documents(isin_list: List[str], start_date: str, end_date: str
 def main():
     st.title("Quartr Data Retrieval and S3 Upload")
     
-    with st.form("config_form"):
+    with st.form(key="quartr_form"):
         isin_input = st.text_area(
             "Enter ISINs (one per line)",
             help="Enter each ISIN on a new line"
@@ -381,40 +381,48 @@ def main():
             help="Choose which types of documents to retrieve"
         )
         
+        # Get default bucket from secrets with fallback
+        default_bucket = ""
+        try:
+            default_bucket = st.secrets["s3"]["DEFAULT_BUCKET"]
+        except Exception:
+            st.warning("No default bucket configured in secrets.toml")
+            
         s3_bucket = st.text_input(
             "S3 Bucket Name",
-            value=st.secrets["s3"]["DEFAULT_BUCKET"],
+            value=default_bucket,
             help="Enter the name of the S3 bucket for file upload"
         )
         
-        submit_button = st.form_submit_button("Start Processing")
-    
-    if submit_button:
-        if not isin_input or not s3_bucket or not doc_types:
-            st.error("Please fill in all required fields")
-            return
+        # Submit button must be the last element in the form
+        submitted = st.form_submit_button("Start Processing")
         
-        if start_date > end_date:
-            st.error("Start date must be before end date")
-            return
-        
-        isin_list = [isin.strip() for isin in isin_input.split("\n") if isin.strip()]
-        
-        if not isin_list:
-            st.error("Please enter at least one valid ISIN")
-            return
-        
-        try:
-            asyncio.run(process_documents(
-                isin_list,
-                start_date.strftime("%Y-%m-%d"),
-                end_date.strftime("%Y-%m-%d"),
-                doc_types,
-                s3_bucket
-            ))
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
-            return
+        if submitted:
+            if not isin_input or not s3_bucket or not doc_types:
+                st.error("Please fill in all required fields")
+                return
+            
+            if start_date > end_date:
+                st.error("Start date must be before end date")
+                return
+            
+            isin_list = [isin.strip() for isin in isin_input.split("\n") if isin.strip()]
+            
+            if not isin_list:
+                st.error("Please enter at least one valid ISIN")
+                return
+            
+            try:
+                asyncio.run(process_documents(
+                    isin_list,
+                    start_date.strftime("%Y-%m-%d"),
+                    end_date.strftime("%Y-%m-%d"),
+                    doc_types,
+                    s3_bucket
+                ))
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
+                return
 
 if __name__ == "__main__":
     main()
