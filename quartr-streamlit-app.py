@@ -354,10 +354,22 @@ async def process_documents(isin_list: List[str], start_date: str, end_date: str
 def main():
     st.title("Quartr Data Retrieval and S3 Upload")
     
+    # Example ISINs
+    st.sidebar.header("Help")
+    st.sidebar.markdown("""
+    ### Example ISINs:
+    - US5024413065 (LVMH ADR)
+    - FR0000121014 (LVMH)
+    - TH0809120700 (LVMH TH)
+    
+    Enter one ISIN per line in the input box.
+    """)
+    
     with st.form(key="quartr_form"):
         isin_input = st.text_area(
             "Enter ISINs (one per line)",
-            help="Enter each ISIN on a new line"
+            help="Enter each ISIN on a new line. See sidebar for examples.",
+            height=100
         )
         
         col1, col2 = st.columns(2)
@@ -365,13 +377,15 @@ def main():
             start_date = st.date_input(
                 "Start Date",
                 datetime(2024, 1, 1),
-                help="Select start date for document retrieval"
+                help="Select start date for document retrieval",
+                min_value=datetime(2000, 1, 1)
             )
         with col2:
             end_date = st.date_input(
                 "End Date",
-                datetime(2024, 10, 31),
-                help="Select end date for document retrieval"
+                datetime(2024, 12, 31),
+                help="Select end date for document retrieval",
+                max_value=datetime(2025, 12, 31)
             )
         
         doc_types = st.multiselect(
@@ -426,3 +440,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+Last edited just now
