@@ -72,159 +72,48 @@ class TranscriptProcessor:
     @staticmethod
     async def process_transcript(transcript_url: str, session: aiohttp.ClientSession) -> str:
         """Process transcript JSON into clean text"""
-        async with session.get(transcript_url) as response:
-            if response.status == 200:
-                try:
-                    transcript_data = await response.json()
-                    return transcript_data.get('transcript', {}).get('text', '')
-                except json.JSONDecodeError:
-                    st.error(f"Error decoding transcript JSON from {transcript_url}")
-                    return ''
-            return ''
-
-    @staticmethod
-    def create_pdf(company_name: str, event_title: str, event_date: str, 
-                   transcript_text: str, logo_url: str = None, logo_opacity: float = 0.1) -> bytes:
-        """Create a PDF with watermark from transcript text"""
-        buffer = io.BytesIO()
-        
-        # Get logo data if URL provided
-        logo_data = None
-        if logo_url:
+        # Check if we're dealing with a raw transcript URL 
+        if 'raw-transcripts' not in transcript_url:
+            # Try to get the raw transcript URL from the transcripts object
             try:
-                response = requests.get(logo_url)
-                response.raise_for_status()
-                logo_data = response.content
+                base_url = transcript_url.split('/transcript')[0]
+                info_url = f"{base_url}/transcripts"
+                async with session.get(info_url) as response:
+                    if response.status == 200:
+                        info_data = await response.json()
+                        transcript_url = info_data.get('transcripts', {}).get('transcriptUrl', '')
+                        if not transcript_url:
+                            st.warning(f"No raw transcript URL found for {base_url}")
+                            return ''
             except Exception as e:
-                st.error(f"Error fetching logo: {str(e)}")
+                st.warning(f"Error getting raw transcript URL: {str(e)}")
+                return ''
 
-        # Create PDF with watermark
-        doc = WatermarkDocTemplate(
-            buffer,
-            logo_data=logo_data,
-            logo_opacity=logo_opacity,
-            pagesize=letter,
-            rightMargin=72,
-            leftMargin=72,
-            topMargin=72,
-            bottomMargin=72
-        )
-
-        styles = getSampleStyleSheet()
-        
-        header_style = ParagraphStyle(
-            'CustomHeader',
-            parent=styles['Heading1'],
-            fontSize=14,
-            spaceAfter=30,
-            textColor=colors.HexColor('#1a472a'),
-            alignment=1
-        )
-        
-        speaker_style = ParagraphStyle(
-            'Speaker',
-            parent=styles['Heading2'],
-            fontSize=11,
-            textColor=colors.HexColor('#666666'),
-            spaceBefore=20,
-            spaceAfter=10,
-            fontName='Helvetica-Bold'
-        )
-        
-        text_style = ParagraphStyle(
-            'CustomText',
-            parent=styles['Normal'],
-            fontSize=10,
-            leading=14,
-            spaceBefore=6,
-            fontName='Helvetica'
-        )
-
-        story = []
-        
-        # Add header
-        header_text = f"""
-            <para alignment="center">
-            <b>{company_name}</b><br/>
-            <br/>
-            Event: {event_title}<br/>
-            Date: {event_date}
-            </para>
-        """
-        story.append(Paragraph(header_text, header_style))
-        story.append(Spacer(1, 30))
-
-        # Process transcript text
-        paragraphs = transcript_text.strip().split('\n\n')
-        for para in paragraphs:
-            if para.strip():
-                if para.strip().startswith('['):
-                    story.append(Paragraph(para, speaker_style))
-                else:
-                    story.append(Paragraph(para, text_style))
-                story.append(Spacer(1, 6))
-
-        doc.build(story)
-        return buffer.getvalue()
-
-class QuartrAPI:
-    def __init__(self):
-        self.api_key = st.secrets["quartr"]["API_KEY"]
-        self.base_url = "https://api.quartr.com/public/v1"
-        self.headers = {"X-Api-Key": self.api_key}
-        
-    async def get_company_events(self, isin: str, session: aiohttp.ClientSession) -> Dict:
-        url = f"{self.base_url}/companies/isin/{isin}"
         try:
-            async with session.get(url, headers=self.headers) as response:
+            async with session.get(transcript_url) as response:
                 if response.status == 200:
-                    return await response.json()
+                    if 'application/json' in response.headers.get('Content-Type', ''):
+                        try:
+                            transcript_data = await response.json()
+                            return transcript_data.get('transcript', {}).get('text', '')
+                        except json.JSONDecodeError:
+                            st.error(f"Error decoding transcript JSON from {transcript_url}")
+                            return ''
+                    else:
+                        st.warning(f"Unexpected content type for transcript: {response.headers.get('Content-Type')}")
+                        return ''
                 else:
-                    st.error(f"Error fetching data for ISIN {isin}: {response.status}")
-                    return {}
+                    st.warning(f"Failed to fetch transcript: {response.status}")
+                    return ''
         except Exception as e:
-            st.error(f"Error fetching data for ISIN {isin}: {str(e)}")
-            return {}
-
-class S3Handler:
-    def __init__(self):
-        self.session = aioboto3.Session(
-            aws_access_key_id=st.secrets["aws"]["AWS_ACCESS_KEY_ID"],
-            aws_secret_access_key=st.secrets["aws"]["AWS_SECRET_ACCESS_KEY"],
-            region_name=st.secrets["aws"]["AWS_DEFAULT_REGION"]
-        )
-
-    async def upload_file(self, file_data: bytes, s3_key: str, bucket_name: str, 
-                         content_type: str = 'application/pdf'):
-        try:
-            async with self.session.client('s3') as s3:
-                await s3.put_object(
-                    Bucket=bucket_name,
-                    Key=s3_key,
-                    Body=file_data,
-                    ContentType=content_type
-                )
-                return True
-        except Exception as e:
-            st.error(f"Error uploading to S3: {str(e)}")
-            return False
-
-def format_s3_key(company_name: str, date: str, doc_type: str, filename: str) -> str:
-    """Format S3 key with proper naming convention"""
-    clean_company = company_name.replace(" ", "_").replace("/", "_").lower()
-    clean_date = date.split("T")[0]
-    clean_filename = filename.replace(" ", "_").lower()
-    return f"{clean_company}/{clean_date}/{doc_type}/{clean_filename}"
+            st.warning(f"Error processing transcript: {str(e)}")
+            return ''
 
 async def process_documents(isin_list: List[str], start_date: str, end_date: str, 
                           selected_docs: List[str], bucket_name: str):
     quartr = QuartrAPI()
     s3_handler = S3Handler()
     transcript_processor = TranscriptProcessor()
-    
-    # Get logo configuration from secrets
-    logo_url = st.secrets["branding"]["COMPANY_LOGO_URL"]
-    logo_opacity = float(st.secrets["branding"]["LOGO_OPACITY"])
     
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -237,16 +126,28 @@ async def process_documents(isin_list: List[str], start_date: str, end_date: str
     
     try:
         async with aiohttp.ClientSession() as session:
-            tasks = []
+            # First validate all ISINs
+            valid_isins = []
             for isin in isin_list:
-                tasks.append(quartr.get_company_events(isin, session))
+                company_data = await quartr.get_company_events(isin, session)
+                if company_data and 'events' in company_data:
+                    valid_isins.append(isin)
+                else:
+                    st.warning(f"Skipping invalid ISIN {isin}")
             
-            companies_data = await asyncio.gather(*tasks)
+            if not valid_isins:
+                st.error("No valid ISINs found")
+                return
+                
+            # Continue with valid ISINs only
+            companies_data = []
+            for isin in valid_isins:
+                data = await quartr.get_company_events(isin, session)
+                if data:
+                    companies_data.append(data)
             
             # Calculate total files
             for company in companies_data:
-                if not company:
-                    continue
                 for event in company.get('events', []):
                     event_date = event.get('eventDate', '').split('T')[0]
                     if start_date <= event_date <= end_date:
@@ -257,6 +158,7 @@ async def process_documents(isin_list: List[str], start_date: str, end_date: str
             if total_files == 0:
                 st.warning("No matching documents found for the specified criteria.")
                 return
+                
             
             # Process files
             for company in companies_data:
